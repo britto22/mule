@@ -18,7 +18,8 @@ import static org.mule.runtime.core.api.processor.strategy.AsyncProcessingStrate
 import static org.mule.runtime.core.api.source.MessageSource.BackPressureStrategy.WAIT;
 import static org.mule.runtime.core.privileged.processor.MessageProcessors.processToApply;
 import static reactor.core.Exceptions.propagate;
-import static reactor.core.publisher.Flux.from;
+import static reactor.core.publisher.Mono.from;
+
 import org.mule.runtime.api.deployment.management.ComponentInitialStateManager;
 import org.mule.runtime.api.exception.DefaultMuleException;
 import org.mule.runtime.api.exception.MuleException;
@@ -52,13 +53,15 @@ import org.mule.runtime.core.privileged.processor.chain.MessageProcessorChain;
 import org.mule.runtime.core.privileged.processor.chain.MessageProcessorChainBuilder;
 import org.mule.runtime.core.privileged.registry.RegistrationException;
 
+import org.reactivestreams.Publisher;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -206,7 +209,7 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
    * and how overload is handled depends on the Source back-pressure strategy.
    */
   private ReactiveProcessor dispatchToFlow() {
-    return publisher -> Mono.from(publisher)
+    return publisher -> from(publisher)
         .doOnNext(assertStarted())
         .flatMap(source.getBackPressureStrategy() == WAIT ? flowWaitMapper() : flowFailDropMapper());
   }
@@ -222,7 +225,7 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
   protected abstract Function<? super CoreEvent, Mono<? extends CoreEvent>> flowFailDropMapper();
 
   protected ReactiveProcessor processFlowFunction() {
-    return stream -> from(stream)
+    return stream -> Flux.from(stream)
         .doOnNext(beforeProcessors())
         .transform(processingStrategy.onPipeline(pipeline))
         .doOnNext(afterProcessors())

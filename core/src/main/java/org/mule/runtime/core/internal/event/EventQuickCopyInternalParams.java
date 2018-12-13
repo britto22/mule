@@ -10,7 +10,6 @@ import static org.mule.runtime.api.el.BindingContextUtils.NULL_BINDING_CONTEXT;
 import static org.mule.runtime.api.el.BindingContextUtils.addEventBindings;
 
 import org.mule.runtime.api.el.BindingContext;
-import org.mule.runtime.api.event.EventContext;
 import org.mule.runtime.api.exception.MuleException;
 import org.mule.runtime.api.message.Error;
 import org.mule.runtime.api.message.ItemSequenceInfo;
@@ -29,10 +28,10 @@ import org.mule.runtime.core.internal.message.InternalEvent;
 import org.mule.runtime.core.privileged.connector.ReplyToHandler;
 import org.mule.runtime.core.privileged.event.BaseEventContext;
 import org.mule.runtime.core.privileged.event.MuleSession;
-import org.mule.runtime.core.privileged.event.PrivilegedEvent;
 import org.mule.runtime.core.privileged.store.DeserializationPostInitialisable;
 
 import java.nio.charset.Charset;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -41,56 +40,37 @@ import java.util.Optional;
  *
  * @since 4.1.4
  */
-public class EventQuickCopy implements InternalEvent, DeserializationPostInitialisable {
+public class EventQuickCopyInternalParams implements InternalEvent, DeserializationPostInitialisable {
 
   /**
-   * Creates a new {@link CoreEvent} based on an existing {@link CoreEvent} instance and a {@link EventContext}.
+   * Creates a new {@link CoreEvent} based on an existing {@link CoreEvent} instance and a {@link Map} of
+   * {@link InternalEvent#getInternalParameters()}.
    * <p>
-   * A new {@link EventContext} is used instead of the existing instance referenced by the existing {@link CoreEvent}. This method
-   * should only be used in some specific scenarios like {@code flow-ref} where a new Flow executing the same {@link CoreEvent}
-   * needs a new context.
+   * This is functionally the same as building a new {@link CoreEvent} setting its {@link InternalEvent#getInternalParameters()},
+   * but avoids copying the whole event.
    *
-   * @param event existing event to use as a template to create builder instance
-   * @param context the context to create event instance with.
    * @return new {@link CoreEvent} instance.
    */
-  public static CoreEvent quickCopy(EventContext context, CoreEvent event) {
-    return (event instanceof InternalEvent && context instanceof BaseEventContext)
-        ? new EventQuickCopy((BaseEventContext) context, (InternalEvent) event)
-        : CoreEvent.builder(context, event).build();
+  public static InternalEvent quickCopy(CoreEvent event, Map<String, Object> internalParameters) {
+    return (event instanceof InternalEvent)
+        ? new EventQuickCopyInternalParams((InternalEvent) event, internalParameters)
+        : InternalEvent.builder(event).internalParameters(internalParameters).build();
   }
 
-  /**
-   * Creates a new {@link PrivilegedEvent} based on an existing {@link PrivilegedEvent} instance and a {@link EventContext}.
-   * <p>
-   * A new {@link EventContext} is used instead of the existing instance referenced by the existing {@link PrivilegedEvent}. This
-   * method should only be used in some specific scenarios like {@code flow-ref} where a new Flow executing the same
-   * {@link PrivilegedEvent} needs a new context.
-   *
-   * @param event existing event to use as a template to create builder instance
-   * @param context the context to create event instance with.
-   * @return new {@link PrivilegedEvent} instance.
-   */
-  public static PrivilegedEvent quickCopy(EventContext context, PrivilegedEvent event) {
-    return (event instanceof InternalEvent && context instanceof BaseEventContext)
-        ? new EventQuickCopy((BaseEventContext) context, (InternalEvent) event)
-        : PrivilegedEvent.builder(context, event).build();
-  }
-
-  private final BaseEventContext context;
   private final InternalEvent event;
+  private final Map<String, Object> internalParameters;
 
   private transient LazyValue<BindingContext> bindingContextBuilder =
       new LazyValue<>(() -> addEventBindings(this, NULL_BINDING_CONTEXT));
 
-  public EventQuickCopy(BaseEventContext context, InternalEvent event) {
-    this.context = context;
+  public EventQuickCopyInternalParams(InternalEvent event, Map<String, Object> internalParameters) {
     this.event = event;
+    this.internalParameters = internalParameters;
   }
 
   @Override
   public BaseEventContext getContext() {
-    return context;
+    return event.getContext();
   }
 
   @Override
@@ -145,7 +125,7 @@ public class EventQuickCopy implements InternalEvent, DeserializationPostInitial
 
   @Override
   public FlowCallStack getFlowCallStack() {
-    return context.getFlowCallStack();
+    return event.getFlowCallStack();
   }
 
   @Override
@@ -175,7 +155,7 @@ public class EventQuickCopy implements InternalEvent, DeserializationPostInitial
 
   @Override
   public String getCorrelationId() {
-    return getLegacyCorrelationId() != null ? getLegacyCorrelationId() : getContext().getCorrelationId();
+    return event.getCorrelationId();
   }
 
   @Override
@@ -190,12 +170,22 @@ public class EventQuickCopy implements InternalEvent, DeserializationPostInitial
 
   @Override
   public Map<String, ?> getInternalParameters() {
-    return event.getInternalParameters();
+    if (event.getInternalParameters().isEmpty()) {
+      return internalParameters;
+    }
+
+    final Map<String, Object> resolvedParams = new HashMap<>(event.getInternalParameters());
+    resolvedParams.putAll(internalParameters);
+    return resolvedParams;
   }
 
   @Override
   public <T> T getInternalParameter(String key) {
-    return event.getInternalParameter(key);
+    final Object outerValue = internalParameters.get(key);
+
+    return outerValue != null
+        ? (T) outerValue
+        : event.getInternalParameter(key);
   }
 
   /**

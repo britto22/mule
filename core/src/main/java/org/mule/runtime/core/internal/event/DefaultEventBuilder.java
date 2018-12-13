@@ -490,6 +490,11 @@ public class DefaultEventBuilder implements InternalEvent.Builder {
     }
 
     @Override
+    public <T> T getInternalParameter(String key) {
+      return (T) internalParameters.get(key);
+    }
+
+    @Override
     public Optional<GroupCorrelation> getGroupCorrelation() {
       return ofNullable(toGroupCorrelation(itemSequenceInfo));
     }

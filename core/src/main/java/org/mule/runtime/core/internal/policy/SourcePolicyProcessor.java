@@ -24,8 +24,6 @@ import org.mule.runtime.core.privileged.event.PrivilegedEvent;
 
 import org.reactivestreams.Publisher;
 
-import reactor.core.publisher.Flux;
-
 /**
  * This class is responsible for the processing of a policy applied to a {@link org.mule.runtime.core.api.source.MessageSource}.
  *
@@ -82,17 +80,16 @@ public class SourcePolicyProcessor implements Processor {
   @Override
   public Publisher<CoreEvent> apply(Publisher<CoreEvent> publisher) {
     return from(publisher)
-        .cast(PrivilegedEvent.class)
         .flatMap(sourceEvent -> {
           PolicyStateId policyStateId = stateIdFactory.create(sourceEvent);
           policyStateHandler.updateNextOperation(policyStateId.getExecutionIdentifier(),
-                                                 buildSourceExecutionWithPolicyFunction(policyStateId, sourceEvent));
+                                                 buildSourceExecutionWithPolicyFunction(policyStateId,
+                                                                                        (PrivilegedEvent) sourceEvent));
           return just(sourceEvent)
-              .map(event -> policyEventConverter.createEvent(sourceEvent, noVariablesEvent(sourceEvent)))
-              .cast(CoreEvent.class)
+              .map(event -> (CoreEvent) policyEventConverter.createEvent((PrivilegedEvent) sourceEvent,
+                                                                         noVariablesEvent(sourceEvent)))
               .transform(policy.getPolicyChain())
-              .cast(PrivilegedEvent.class)
-              .map(event -> policyEventConverter.createEvent(event, sourceEvent));
+              .map(event -> (CoreEvent) policyEventConverter.createEvent((PrivilegedEvent) event, (PrivilegedEvent) sourceEvent));
         });
   }
 
@@ -106,7 +103,7 @@ public class SourcePolicyProcessor implements Processor {
 
       @Override
       public Publisher<CoreEvent> apply(Publisher<CoreEvent> publisher) {
-        return Flux.from(publisher)
+        return from(publisher)
             .doOnNext(event -> saveState((PrivilegedEvent) event))
             .map(event -> (CoreEvent) policyEventConverter
                 .createEvent((PrivilegedEvent) event, sourceEvent, policy.getPolicyChain().isPropagateMessageTransformations()))
